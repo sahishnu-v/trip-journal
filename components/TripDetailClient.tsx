@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { ArrowLeft, Trash2, Upload, Sparkles, Loader2, Save, X } from 'lucide-react'
+import { ArrowLeft, Trash2, Upload, Sparkles, Loader2, Save, X, Globe, Lock } from 'lucide-react'
 
 type Trip = {
   id: string
@@ -15,6 +15,7 @@ type Trip = {
   end_date: string
   notes: string | null
   ai_summary: string | null
+  is_public: boolean
 }
 
 type Photo = { id: string; storage_path: string; caption: string | null }
@@ -22,7 +23,13 @@ type Photo = { id: string; storage_path: string; caption: string | null }
 const MAX_BYTES = 5 * 1024 * 1024 // 5 MB
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp']
 
-export default function TripDetailClient({ initialTrip }: { initialTrip: Trip }) {
+export default function TripDetailClient({
+  initialTrip,
+  isOwner,
+}: {
+  initialTrip: Trip
+  isOwner: boolean
+}) {
   const router = useRouter()
   const supabase = createClient()
   const [trip, setTrip] = useState<Trip>(initialTrip)
@@ -38,6 +45,7 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
   const [uploading, setUploading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [streamingSummary, setStreamingSummary] = useState('')
+  const [togglingPublic, setTogglingPublic] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function loadPhotos() {
@@ -54,7 +62,6 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
     return supabase.storage.from('trip-photos').getPublicUrl(path).data.publicUrl
   }
 
-  // UPDATE
   async function saveEdits() {
     const { error } = await supabase
       .from('trips')
@@ -72,7 +79,6 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
     toast.success('Trip updated.')
   }
 
-  // DELETE (UX #5 — confirmation modal)
   async function confirmDelete() {
     const { error } = await supabase.from('trips').delete().eq('id', trip.id)
     if (error) { toast.error('Could not delete trip.'); return }
@@ -80,7 +86,22 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
     router.push('/trips')
   }
 
-  // PHOTO UPLOAD with validation
+  async function togglePublic() {
+    setTogglingPublic(true)
+    const newValue = !trip.is_public
+    const { error } = await supabase
+      .from('trips')
+      .update({ is_public: newValue })
+      .eq('id', trip.id)
+    if (error) {
+      toast.error('Could not change visibility.')
+    } else {
+      setTrip({ ...trip, is_public: newValue })
+      toast.success(newValue ? 'Trip is now public.' : 'Trip is now private.')
+    }
+    setTogglingPublic(false)
+  }
+
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -126,7 +147,6 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
     loadPhotos()
   }
 
-  // AI summary with streaming
   async function generateSummary() {
     setGenerating(true)
     setStreamingSummary('')
@@ -158,7 +178,6 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
         setStreamingSummary(full)
       }
 
-      // Persist the final summary
       await supabase.from('trips').update({ ai_summary: full }).eq('id', trip.id)
       setTrip({ ...trip, ai_summary: full })
       toast.success('Summary generated.')
@@ -171,33 +190,56 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
   return (
     <main className="max-w-4xl mx-auto px-6 py-10">
       <Link
-        href="/trips"
+        href={isOwner ? '/trips' : '/explore'}
         className="inline-flex items-center gap-2 text-stone-500 hover:text-teal-800 text-sm mb-8"
       >
-        <ArrowLeft className="w-4 h-4" /> Back to trips
+        <ArrowLeft className="w-4 h-4" /> Back to {isOwner ? 'your trips' : 'explore'}
       </Link>
 
       {!editing ? (
         <header className="mb-10">
-          <p className="text-xs uppercase tracking-[0.3em] text-teal-800 mb-2">
-            {formatRange(trip.start_date, trip.end_date)}
-          </p>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-xs uppercase tracking-[0.3em] text-teal-800">
+              {formatRange(trip.start_date, trip.end_date)}
+            </p>
+            {trip.is_public && (
+              <span className="inline-flex items-center gap-1 text-xs text-teal-800 bg-teal-50 px-2 py-0.5 rounded-full">
+                <Globe className="w-3 h-3" /> Public
+              </span>
+            )}
+          </div>
           <h1 className="font-display text-5xl font-light mb-4">{trip.destination}</h1>
           {trip.notes && <p className="text-stone-700 leading-relaxed whitespace-pre-wrap">{trip.notes}</p>}
-          <div className="flex gap-2 mt-6">
-            <button
-              onClick={() => setEditing(true)}
-              className="text-sm border border-stone-300 px-4 py-2 rounded-full hover:bg-stone-100"
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => setShowDelete(true)}
-              className="text-sm text-red-600 border border-red-200 px-4 py-2 rounded-full hover:bg-red-50 inline-flex items-center gap-1"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
-          </div>
+          {isOwner && (
+            <div className="flex flex-wrap gap-2 mt-6">
+              <button
+                onClick={() => setEditing(true)}
+                className="text-sm border border-stone-300 px-4 py-2 rounded-full hover:bg-stone-100"
+              >
+                Edit
+              </button>
+              <button
+                onClick={togglePublic}
+                disabled={togglingPublic}
+                className="text-sm border border-stone-300 px-4 py-2 rounded-full hover:bg-stone-100 inline-flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {togglingPublic ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : trip.is_public ? (
+                  <Lock className="w-3.5 h-3.5" />
+                ) : (
+                  <Globe className="w-3.5 h-3.5" />
+                )}
+                {trip.is_public ? 'Make private' : 'Make public'}
+              </button>
+              <button
+                onClick={() => setShowDelete(true)}
+                className="text-sm text-red-600 border border-red-200 px-4 py-2 rounded-full hover:bg-red-50 inline-flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+            </div>
+          )}
         </header>
       ) : (
         <section className="mb-10 bg-white border border-stone-200 rounded-2xl p-6">
@@ -253,21 +295,25 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
           <h2 className="font-display text-xl flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-teal-800" /> AI summary
           </h2>
-          <button
-            onClick={generateSummary}
-            disabled={generating}
-            className="text-sm bg-teal-800 text-stone-50 px-4 py-2 rounded-full hover:bg-teal-900 disabled:opacity-50 inline-flex items-center gap-2"
-          >
-            {generating && <Loader2 className="w-4 h-4 animate-spin" />}
-            {trip.ai_summary ? 'Regenerate' : 'Generate'}
-          </button>
+          {isOwner && (
+            <button
+              onClick={generateSummary}
+              disabled={generating}
+              className="text-sm bg-teal-800 text-stone-50 px-4 py-2 rounded-full hover:bg-teal-900 disabled:opacity-50 inline-flex items-center gap-2"
+            >
+              {generating && <Loader2 className="w-4 h-4 animate-spin" />}
+              {trip.ai_summary ? 'Regenerate' : 'Generate'}
+            </button>
+          )}
         </div>
         {(streamingSummary || trip.ai_summary) ? (
           <p className="text-stone-700 leading-relaxed italic whitespace-pre-wrap">
             {streamingSummary || trip.ai_summary}
           </p>
         ) : (
-          <p className="text-stone-500 text-sm">Click generate to have AI write a narrative summary of this trip.</p>
+          <p className="text-stone-500 text-sm">
+            {isOwner ? 'Click generate to have AI write a narrative summary of this trip.' : 'No summary yet.'}
+          </p>
         )}
       </section>
 
@@ -275,24 +321,26 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display text-xl">Photos</h2>
-          <label className="text-sm border border-stone-300 px-4 py-2 rounded-full hover:bg-stone-100 inline-flex items-center gap-2 cursor-pointer">
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {uploading ? 'Uploading…' : 'Upload photo'}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={uploading}
-            />
-          </label>
+          {isOwner && (
+            <label className="text-sm border border-stone-300 px-4 py-2 rounded-full hover:bg-stone-100 inline-flex items-center gap-2 cursor-pointer">
+              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {uploading ? 'Uploading…' : 'Upload photo'}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleFileUpload}
+                className="hidden"
+                disabled={uploading}
+              />
+            </label>
+          )}
         </div>
 
         {photos.length === 0 ? (
           <div className="text-center py-16 border-2 border-dashed border-stone-200 rounded-2xl">
             <div className="text-4xl mb-2">📷</div>
-            <p className="text-stone-500 text-sm">No photos yet. Upload your first one.</p>
+            <p className="text-stone-500 text-sm">No photos yet.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -303,20 +351,21 @@ export default function TripDetailClient({ initialTrip }: { initialTrip: Trip })
                   alt={photo.caption ?? 'Trip photo'}
                   className="w-full h-full object-cover"
                 />
-                <button
-                  onClick={() => deletePhoto(photo)}
-                  className="absolute top-2 right-2 bg-white/90 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                  aria-label="Delete photo"
-                >
-                  <X className="w-4 h-4 text-stone-700" />
-                </button>
+                {isOwner && (
+                  <button
+                    onClick={() => deletePhoto(photo)}
+                    className="absolute top-2 right-2 bg-white/90 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Delete photo"
+                  >
+                    <X className="w-4 h-4 text-stone-700" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
         )}
       </section>
 
-      {/* UX #5 — Delete confirmation modal */}
       {showDelete && (
         <div className="fixed inset-0 bg-stone-900/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6">

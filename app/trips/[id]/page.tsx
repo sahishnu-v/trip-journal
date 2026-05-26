@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { redirect, notFound } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import TripDetailClient from '@/components/TripDetailClient'
 
 export default async function TripDetailPage({
@@ -10,7 +10,6 @@ export default async function TripDetailPage({
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/')
 
   const { data: trip } = await supabase
     .from('trips')
@@ -18,7 +17,11 @@ export default async function TripDetailPage({
     .eq('id', id)
     .single()
 
+  // 404 if trip doesn't exist OR if it's private and viewer isn't the owner
   if (!trip) notFound()
+  if (!trip.is_public && trip.user_id !== user?.id) notFound()
 
-  return <TripDetailClient initialTrip={trip} />
+  const isOwner = !!user && user.id === trip.user_id
+
+  return <TripDetailClient initialTrip={trip} isOwner={isOwner} />
 }

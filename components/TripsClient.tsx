@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { Loader2, Search, Plus, MapPin, LogOut } from 'lucide-react'
+import { Loader2, Search, Plus, MapPin, LogOut, Globe } from 'lucide-react'
 import NewTripModal from './NewTripModal'
 
 type Trip = {
@@ -14,6 +14,7 @@ type Trip = {
   end_date: string
   notes: string | null
   created_at: string
+  is_public: boolean
 }
 
 export default function TripsClient({ userEmail }: { userEmail: string }) {
@@ -76,6 +77,12 @@ export default function TripsClient({ userEmail }: { userEmail: string }) {
           <p className="text-sm text-stone-500 mt-1">{userEmail}</p>
         </div>
         <div className="flex gap-2">
+          <Link
+            href="/explore"
+            className="inline-flex items-center gap-2 border border-stone-300 px-5 py-2.5 rounded-full hover:bg-stone-100 transition-colors text-sm"
+          >
+            Explore
+          </Link>
           <button
             onClick={() => setShowNewModal(true)}
             className="inline-flex items-center gap-2 bg-stone-900 text-stone-50 px-5 py-2.5 rounded-full hover:bg-teal-800 transition-colors text-sm"
@@ -152,9 +159,16 @@ export default function TripsClient({ userEmail }: { userEmail: string }) {
                   {trip.destination}
                 </h3>
               </div>
-              <p className="text-xs uppercase tracking-wider text-stone-500 mb-3">
-                {formatRange(trip.start_date, trip.end_date)}
-              </p>
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-xs uppercase tracking-wider text-stone-500">
+                  {formatRange(trip.start_date, trip.end_date)}
+                </p>
+                {trip.is_public && (
+                  <span className="inline-flex items-center gap-1 text-xs text-teal-800 bg-teal-50 px-2 py-0.5 rounded-full">
+                    <Globe className="w-3 h-3" /> Public
+                  </span>
+                )}
+              </div>
               {trip.notes && (
                 <p className="text-sm text-stone-600 line-clamp-3">{trip.notes}</p>
               )}
